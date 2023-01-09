@@ -34,7 +34,8 @@ export const links: LinksFunction = () => {
 export const meta: MetaFunction = () => ({
   charset: "utf-8",
   title: "Fakebooks Remix",
-  description: "Fakebooks is an example Remix application for comparing to a CRA-based app"
+  description:
+    "Fakebooks is an example Remix application for comparing to a CRA-based app",
 });
 
 type LoaderData = {

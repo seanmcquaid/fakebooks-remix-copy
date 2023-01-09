@@ -15,18 +15,8 @@ import type { LineItemFields } from "~/models/invoice.server";
 import { createInvoice } from "~/models/invoice.server";
 import { parseDate } from "~/utils";
 import { CustomerCombobox } from "~/routes/resources/customers";
-import type {
-  ZodError,
-  ZodObject,
-  ZodRawShape,
-  ZodTypeAny} from "zod";
-import {
-  z,
-  ZodArray,
-  ZodBoolean,
-  ZodNumber,
-  ZodString
-} from "zod";
+import type { ZodError, ZodObject, ZodRawShape, ZodTypeAny } from "zod";
+import { z, ZodArray, ZodBoolean, ZodNumber, ZodString } from "zod";
 
 export const loader: LoaderFunction = async ({ request }) => {
   await requireUser(request);
@@ -95,23 +85,23 @@ const mapValueToInternalType = <T extends ZodTypeAny>(
     ? isArrayOfStrings
       ? valueAsArray.map(String)
       : isArrayOfNumbers
-        ? valueAsArray.map(Number)
-        : isArrayOfBooleans
-          ? valueAsArray.map(Boolean)
-          : value
+      ? valueAsArray.map(Number)
+      : isArrayOfBooleans
+      ? valueAsArray.map(Boolean)
+      : value
     : isString
-      ? String(value)
-      : isNumber
-        ? Number(value)
-        : isBoolean
-          ? Boolean(value)
-          : value;
+    ? String(value)
+    : isNumber
+    ? Number(value)
+    : isBoolean
+    ? Boolean(value)
+    : value;
 };
 
 const getZodFormData = <ValidationSchema extends ZodObject<ZodRawShape>>({
-                                                                           formData,
-                                                                           validationSchema,
-                                                                         }: {
+  formData,
+  validationSchema,
+}: {
   formData: FormData;
   validationSchema: ValidationSchema;
 }):
@@ -206,7 +196,9 @@ export const action: ActionFunction = async ({ request }) => {
       return redirect(`/sales/invoices/${invoice.id}`);
     }
   }
-  return new Response(`Unsupported intent: ${validatedFormData.data.intent}`, { status: 400 });
+  return new Response(`Unsupported intent: ${validatedFormData.data.intent}`, {
+    status: 400,
+  });
 };
 
 export default function NewInvoice() {
@@ -287,10 +279,10 @@ function LineItems() {
 }
 
 function LineItemFormFields({
-                              lineItemClientId,
-                              index,
-                              onRemoveClick,
-                            }: {
+  lineItemClientId,
+  index,
+  onRemoveClick,
+}: {
   lineItemClientId: string;
   index: number;
   onRemoveClick: () => void;
