@@ -15,6 +15,18 @@ import type { LineItemFields } from "~/models/invoice.server";
 import { createInvoice } from "~/models/invoice.server";
 import { parseDate } from "~/utils";
 import { CustomerCombobox } from "~/routes/resources/customers";
+import type {
+  ZodError,
+  ZodObject,
+  ZodRawShape,
+  ZodTypeAny} from "zod";
+import {
+  z,
+  ZodArray,
+  ZodBoolean,
+  ZodNumber,
+  ZodString
+} from "zod";
 
 export const loader: LoaderFunction = async ({ request }) => {
   await requireUser(request);
@@ -64,30 +76,103 @@ function validateLineItemUnitPrice(unitPrice: number) {
   return null;
 }
 
+const mapValueToInternalType = <T extends ZodTypeAny>(
+  value: unknown,
+  schema?: T
+) => {
+  const def: { type: T; typeName: string } | undefined = schema?._def;
+  const type = def?.type;
+  const typeName = def?.typeName;
+  const isArray = typeName === "ZodArray";
+  const isString = typeName === "ZodString";
+  const isNumber = typeName === "ZodNumber";
+  const isBoolean = typeName === "ZodBoolean";
+  const isArrayOfStrings = type instanceof ZodString;
+  const isArrayOfNumbers = type instanceof ZodNumber;
+  const isArrayOfBooleans = type instanceof ZodBoolean;
+  const valueAsArray = value as unknown[];
+  return isArray
+    ? isArrayOfStrings
+      ? valueAsArray.map(String)
+      : isArrayOfNumbers
+        ? valueAsArray.map(Number)
+        : isArrayOfBooleans
+          ? valueAsArray.map(Boolean)
+          : value
+    : isString
+      ? String(value)
+      : isNumber
+        ? Number(value)
+        : isBoolean
+          ? Boolean(value)
+          : value;
+};
+
+const getZodFormData = <ValidationSchema extends ZodObject<ZodRawShape>>({
+                                                                           formData,
+                                                                           validationSchema,
+                                                                         }: {
+  formData: FormData;
+  validationSchema: ValidationSchema;
+}):
+  | { success: true; data: ValidationSchema["_output"] }
+  | { success: false; error: ZodError } => {
+  const allValues: { [key: string]: unknown[] } = {};
+  formData.forEach((value, key) => {
+    allValues[key] = allValues[key] ? [...allValues[key], value] : [value];
+  });
+  const mappedValues = Object.entries(allValues).reduce(
+    (prev, [key, entries]) => ({
+      ...prev,
+      [key]:
+        validationSchema.shape[key] instanceof ZodArray
+          ? mapValueToInternalType(entries, validationSchema.shape[key])
+          : mapValueToInternalType(entries[0], validationSchema.shape[key]),
+    }),
+    {}
+  );
+  const result = validationSchema.safeParse(mappedValues);
+
+  if (result.success) {
+    return { data: result.data, success: true };
+  } else {
+    return { error: result.error, success: false };
+  }
+};
 export const action: ActionFunction = async ({ request }) => {
   await requireUser(request);
   const formData = await request.formData();
-  const intent = formData.get("intent");
-  switch (intent) {
-    case "create": {
-      const customerId = formData.get("customerId");
-      const dueDateString = formData.get("dueDate");
-      invariant(typeof customerId === "string", "customerId is required");
-      invariant(typeof dueDateString === "string", "dueDate is required");
-      const dueDate = parseDate(dueDateString);
+  const validatedFormData = getZodFormData({
+    formData,
+    validationSchema: z.object({
+      customerId: z.string(),
+      dueDate: z.string(),
+      lineItemId: z.array(z.string()),
+      quantity: z.array(z.number()),
+      unitPrice: z.array(z.number()),
+      description: z.array(z.string()),
+      intent: z.string(),
+    }),
+  });
+  invariant(
+    validatedFormData.success,
+    validatedFormData.success ? "" : validatedFormData.error.toString()
+  );
 
-      const lineItemIds = formData.getAll("lineItemId");
-      const lineItemQuantities = formData.getAll("quantity");
-      const lineItemUnitPrices = formData.getAll("unitPrice");
-      const lineItemDescriptions = formData.getAll("description");
+  switch (validatedFormData.data.intent) {
+    case "create": {
+      const customerId = validatedFormData.data.customerId;
+      const dueDateString = validatedFormData.data.dueDate;
+      const dueDate = parseDate(dueDateString);
+      const lineItemIds = validatedFormData.data.lineItemId;
+      const lineItemQuantities = validatedFormData.data.quantity;
+      const lineItemUnitPrices = validatedFormData.data.unitPrice;
+      const lineItemDescriptions = validatedFormData.data.description;
       const lineItems: Array<LineItemFields> = [];
       for (let i = 0; i < lineItemQuantities.length; i++) {
         const quantity = +lineItemQuantities[i];
         const unitPrice = +lineItemUnitPrices[i];
         const description = lineItemDescriptions[i];
-        invariant(typeof quantity === "number", "quantity is required");
-        invariant(typeof unitPrice === "number", "unitPrice is required");
-        invariant(typeof description === "string", "description is required");
 
         lineItems.push({ quantity, unitPrice, description });
       }
@@ -97,7 +182,6 @@ export const action: ActionFunction = async ({ request }) => {
         dueDate: validateDueDate(dueDate),
         lineItems: lineItems.reduce((acc, lineItem, index) => {
           const id = lineItemIds[index];
-          invariant(typeof id === "string", "lineItem ids are required");
           acc[id] = {
             quantity: validateLineItemQuantity(lineItem.quantity),
             unitPrice: validateLineItemUnitPrice(lineItem.unitPrice),
@@ -122,7 +206,7 @@ export const action: ActionFunction = async ({ request }) => {
       return redirect(`/sales/invoices/${invoice.id}`);
     }
   }
-  return new Response(`Unsupported intent: ${intent}`, { status: 400 });
+  return new Response(`Unsupported intent: ${validatedFormData.data.intent}`, { status: 400 });
 };
 
 export default function NewInvoice() {
@@ -203,10 +287,10 @@ function LineItems() {
 }
 
 function LineItemFormFields({
-  lineItemClientId,
-  index,
-  onRemoveClick,
-}: {
+                              lineItemClientId,
+                              index,
+                              onRemoveClick,
+                            }: {
   lineItemClientId: string;
   index: number;
   onRemoveClick: () => void;
